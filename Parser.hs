@@ -4,6 +4,9 @@ import System.Environment
 import Text.ParserCombinators.Parsec hiding (spaces)
 import Control.Monad
 import Numeric (readFloat, readHex, readOct)
+import Data.Char (toLower)
+import Data.Complex
+import Data.Ratio
 
 data LispVal = Atom String
              | List [LispVal]
@@ -11,6 +14,10 @@ data LispVal = Atom String
              | Number Integer
              | String String
              | Bool Bool
+             | Character Char
+             | Float Float
+             | Ratio Rational
+             | Complex (Complex Float)
              deriving (Show)
 
 main :: IO ()
@@ -135,9 +142,66 @@ readBin' dig (x:xs) = readBin' acc xs
 
 -- ****************************************************************************
 
+-- ******************************** Exercise 5 ********************************
+
+parseCharacter :: Parser LispVal
+parseCharacter = do
+  try $ string "#\\"
+  x <- try (string "space" <|> string "newline")
+   <|> parseSingleCharacter
+  return $ Character $ case x of
+       "space" -> ' '
+       "newline" -> '\n'
+       otherwise -> head x
+
+parseSingleCharacter :: Parser [Char]
+parseSingleCharacter = do
+  x <- anyChar
+  notFollowedBy alphaNum
+  return [x]
+
+-- ****************************************************************************
+
+-- ******************************** Exercise 6 ********************************
+
+parseFloat :: Parser LispVal
+parseFloat = try $ do
+  x <- many1 digit
+  char '.'
+  y <- many1 digit
+  return $ Float $ (fst . head . readFloat) (x ++ "." ++ y)
+
+-- ****************************************************************************
+
+-- ******************************** Exercise 7 ********************************
+
+parseRatio :: Parser LispVal
+parseRatio = try $ do
+  x <- many1 digit
+  char '/'
+  y <- many1 digit
+  return $ Ratio $ (read x) % (read y)
+
+parseComplex :: Parser LispVal
+parseComplex = try $ do
+  x <- parseFloat <|> parseDec
+  char '+'
+  y <- parseFloat <|> parseDec
+  char 'i'
+  return $ Complex $ toFloat x :+ toFloat y
+
+toFloat :: LispVal -> Float
+toFloat (Float f) = f
+toFloat (Number n) = fromIntegral n
+
+-- ****************************************************************************
+
 parseExpr :: Parser LispVal
 parseExpr =   parseAtom
           <|> parseString
+          <|> parseComplex
+          <|> parseFloat
+          <|> parseRatio
           <|> parseNumber
           <|> parseBool
 
