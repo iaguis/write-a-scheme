@@ -62,6 +62,16 @@ parseAtom = do
                 "#f" -> Bool False
                 otherwise -> Atom atom
 
+parseExpr :: Parser LispVal
+parseExpr =   parseAtom
+          <|> parseString
+          <|> parseComplex
+          <|> parseFloat
+          <|> parseRatio
+          <|> parseNumber
+          <|> parseBool
+
+
 -- ******************************** Exercise 1 ********************************
 
 parseNumber' :: Parser LispVal
@@ -196,14 +206,6 @@ toFloat (Number n) = fromIntegral n
 
 -- ****************************************************************************
 
-parseExpr :: Parser LispVal
-parseExpr =   parseAtom
-          <|> parseString
-          <|> parseComplex
-          <|> parseFloat
-          <|> parseRatio
-          <|> parseNumber
-          <|> parseBool
 
 -- Function for testing in GHCi
 run parser input =
