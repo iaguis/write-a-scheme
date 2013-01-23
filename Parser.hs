@@ -7,6 +7,7 @@ import Numeric (readFloat, readHex, readOct)
 import Data.Char (toLower)
 import Data.Complex
 import Data.Ratio
+import Data.Array
 
 data LispVal = Atom String
              | List [LispVal]
@@ -18,7 +19,10 @@ data LispVal = Atom String
              | Float Float
              | Ratio Rational
              | Complex (Complex Float)
-             deriving (Show)
+             | Vector (Array Int LispVal)
+
+instance Show LispVal where
+  show = showVal
 
 main :: IO ()
 main = do
@@ -32,7 +36,7 @@ readExpr :: String -> String
 readExpr input =
   case parse parseExpr "lisp" input of
        Left err -> "No match: " ++ show err
-       Right val -> "Found value"
+       Right val -> "Found " ++ show val
 
 spaces1 :: Parser ()
 spaces1 = skipMany1 space
@@ -48,7 +52,7 @@ parseString = do
   return $ String x
 
 parseBool :: Parser LispVal
-parseBool = do
+parseBool = try $ do
   string "#"
   x <- oneOf "tf"
   return $ case x of
@@ -73,9 +77,19 @@ parseExpr =   parseAtom
           <|> parseRatio
           <|> parseNumber
           <|> parseBool
+          <|> parseCharacter
+          <|> parseQuoted
+          <|> try (do
+                    string "#("
+                    x <- parseVector
+                    char ')'
+                    return x)
+          <|> parseAnyList
+          <|> parseQuasiQuote
+          <|> parseUnquote
 
 
--- ******************************** Exercise 1 ********************************
+-- ****************************** Exercise 3.3.1 ******************************
 
 parseNumber' :: Parser LispVal
 parseNumber' = do
@@ -88,7 +102,7 @@ parseNumber'' = many1 digit >>= \numberString ->
 
 -- ****************************************************************************
 
--- ******************************** Exercise 2,3 ********************************
+-- ***************************** Exercise 3.3.2,3 *****************************
 
 escapedChars :: Parser Char
 escapedChars = do
@@ -103,7 +117,7 @@ escapedChars = do
 
 -- ****************************************************************************
 
--- ******************************** Exercise 4 ********************************
+-- ****************************** Exercise 3.3.4 ******************************
 
 parseNumber :: Parser LispVal
 parseNumber = do
@@ -120,28 +134,28 @@ parseDec = do
   (return . Number . read) x
 
 parseDec' :: Parser LispVal
-parseDec' = do
+parseDec' = try $ do
   -- you have to put try for backtracking char # so the next parser starts
   -- from the beginning
-  try $ string "#d"
+  string "#d"
   x <- many1 digit
   (return . Number . read) x
 
 parseOct :: Parser LispVal
-parseOct = do
-  try $ string "#o"
+parseOct = try $ do
+  string "#o"
   x <- many1 octDigit
   (return . Number . fst . head . readOct) x
 
 parseHex :: Parser LispVal
-parseHex = do
-  try $ string "#x"
+parseHex = try $ do
+  string "#x"
   x <- many1 hexDigit
   (return . Number . fst . head . readHex) x
 
 parseBin :: Parser LispVal
-parseBin = do
-  try $ string "#b"
+parseBin = try $ do
+  string "#b"
   x <- many1 $ oneOf "01"
   (return . Number . readBin) x
 
@@ -155,7 +169,7 @@ readBin' dig (x:xs) = readBin' acc xs
 
 -- ****************************************************************************
 
--- ******************************** Exercise 5 ********************************
+-- ****************************** Exercise 3.3.5 ******************************
 
 parseCharacter :: Parser LispVal
 parseCharacter = do
@@ -175,7 +189,7 @@ parseSingleCharacter = do
 
 -- ****************************************************************************
 
--- ******************************** Exercise 6 ********************************
+-- ****************************** Exercise 3.3.6 ******************************
 
 parseFloat :: Parser LispVal
 parseFloat = try $ do
@@ -186,7 +200,7 @@ parseFloat = try $ do
 
 -- ****************************************************************************
 
--- ******************************** Exercise 7 ********************************
+-- ****************************** Exercise 3.3.7 ******************************
 
 parseRatio :: Parser LispVal
 parseRatio = try $ do
@@ -209,9 +223,82 @@ toFloat (Number n) = fromIntegral n
 
 -- ****************************************************************************
 
+parseList :: Parser LispVal
+parseList = liftM List $ sepBy parseExpr spaces1
 
--- Function for testing in GHCi
-run parser input =
-  case runParser parser () "lisp" input of
-       Right n -> "parsed " ++ show n
-       Left err -> "error"
+parseDottedList :: Parser LispVal
+parseDottedList = do
+  head <- endBy parseExpr spaces1
+  tail <- char '.' >> spaces1 >> parseExpr
+  return $ DottedList head tail
+
+parseQuoted :: Parser LispVal
+parseQuoted = do
+  char '\''
+  x <- parseExpr
+  return $ List [Atom "quote", x]
+
+-- ****************************** Exercise 3.4.1 ******************************
+
+parseQuasiQuote :: Parser LispVal
+parseQuasiQuote = do
+  char '`'
+  x <- parseExpr
+  return $ List [Atom "quasiquote", x]
+
+parseUnquote :: Parser LispVal
+parseUnquote = do
+  char ','
+  x <- parseExpr
+  return $ List [Atom "unquote", x]
+
+-- ****************************************************************************
+
+-- ****************************** Exercise 3.4.2 ******************************
+
+parseVector :: Parser LispVal
+parseVector = do
+  values <- sepBy parseExpr spaces1
+  return $ Vector (listArray (0, (length values - 1)) values)
+
+-- ****************************************************************************
+
+-- ****************************** Exercise 3.4.3 ******************************
+
+parseAnyList :: Parser LispVal
+parseAnyList = do
+  char '(' >> spaces
+  head <- parseExpr `sepEndBy` spaces
+  do
+    char '.' >> spaces
+    tail <- parseExpr
+    spaces >> char ')'
+    return $ DottedList head tail
+    <|> (spaces >> char ')' >> (return $ List head))
+
+-- ****************************************************************************
+
+
+showVal :: LispVal -> String
+showVal (String contents) = "\"" ++ contents ++ "\""
+showVal (Atom name) = name
+showVal (Number contents) = show contents
+showVal (Bool True) = "#t"
+showVal (Bool False) = "#f"
+showVal (List contents) = "(" ++ unwordsList contents ++ ")"
+showVal (DottedList head tail) = "(" ++
+  unwordsList head ++ " . " ++ showVal tail ++ ")"
+showVal (Float contents) = show contents
+showVal (Ratio contents) = show (numerator contents) ++
+  "/" ++ show (denominator contents)
+showVal (Complex contents) = show (realPart contents) ++
+  "+" ++ show (imagPart contents) ++ "i"
+showVal (Vector contents) = "#(" ++ unwordsVector contents ++ ")"
+showVal (Character contents) = "#\\" ++ [contents]
+
+unwordsList :: [LispVal] -> String
+unwordsList = unwords . map showVal
+
+unwordsVector :: Array Int LispVal -> String
+unwordsVector = unwordsList . elems
+
