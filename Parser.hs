@@ -23,7 +23,7 @@ data LispVal = Atom String
 main :: IO ()
 main = do
   args <- getArgs
-  putStrLn (readExpr (args !! 0))
+  putStrLn $ readExpr (args !! 0)
 
 symbol :: Parser Char
 symbol = oneOf "!$%&|*+-/:<=>?@^_~"
@@ -34,8 +34,11 @@ readExpr input =
        Left err -> "No match: " ++ show err
        Right val -> "Found value"
 
+spaces1 :: Parser ()
+spaces1 = skipMany1 space
+
 spaces :: Parser ()
-spaces = skipMany1 space
+spaces = skipMany space
 
 parseString :: Parser LispVal
 parseString = do
